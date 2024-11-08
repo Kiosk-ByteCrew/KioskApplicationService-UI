@@ -1,3 +1,3 @@
 # KioskApplicationService-UI
 
-This service contains UI logic for Kiosk UIs.
+This service contains UI logic for Kiosk's UI.
