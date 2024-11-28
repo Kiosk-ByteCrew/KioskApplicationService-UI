@@ -5,6 +5,8 @@ import { useRouter } from "expo-router";
 export default function Index() {
     const router = useRouter();
 
+    // @ts-ignore
+    // @ts-ignore
     return (
         <ImageBackground
             source={require("../assets/images/backgroundi.jpg")}
@@ -21,7 +23,7 @@ export default function Index() {
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={[styles.button, styles.qrButton]}
-                    //onPress={() => router.push("/generate-qr")}
+                    onPress={() => router.push("/qrscreen")}
                 >
                     <Text style={styles.buttonText}>Generate QR Code</Text>
                 </TouchableOpacity>
