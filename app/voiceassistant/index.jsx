@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, FlatList, Dimensions } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Audio } from 'expo-av';
@@ -7,25 +7,20 @@ import * as FileSystem from 'expo-file-system';
 
 const BACKEND_URL = 'http://192.168.0.3:8082'; // Update to your actual backend URL
 
+// Dimensions for scaling on a 10-inch iPad
+// A 10-inch iPad typically has a resolution like 2160x1620 or similar. We'll just use Dimensions for responsive UI.
+const { width, height } = Dimensions.get('window');
+
 export default function VoiceAssistant() {
     const { sessionId, user } = useLocalSearchParams();
-    console.log("-------------------------Session Id------------------------------");
-    console.log(sessionId);
-    console.log("-------------------------User------------------------------");
-    console.log(user);
-
     const [isRecording, setIsRecording] = useState(false);
     const [recording, setRecording] = useState(null);
     const [uploading, setUploading] = useState(false);
-
-    // Conversation: an array of objects { role: 'user'|'assistant', text: string }
     const [conversation, setConversation] = useState([]);
     const [itemsList, setItemsList] = useState([]);
     const [showFinalizeOrder, setShowFinalizeOrder] = useState(false);
 
-    // We can assume this might be the first conversation, so:
     const start_conversation = true;
-    // If you have logic to handle multiple turns, you can track this state.
 
     useEffect(() => {
         requestPermissions();
@@ -71,7 +66,6 @@ export default function VoiceAssistant() {
             const uri = recording.getURI();
             console.log('Recording stopped. File stored at:', uri);
             setRecording(null);
-            // Once we have the audio file URI, we upload it to the server as form data.
             await uploadAudio(uri);
         } catch (err) {
             console.error('stopRecording error:', err);
@@ -80,13 +74,12 @@ export default function VoiceAssistant() {
 
     const uploadAudio = async (uri) => {
         setUploading(true);
-        // message can be empty or some placeholder if not required by your API
         const message = '';
 
         let formData = new FormData();
         formData.append('file', {
             uri,
-            type: 'audio/m4a', // Adjust if your format differs
+            type: 'audio/m4a',
             name: 'recorded_audio.m4a',
         });
         formData.append('session_id', sessionId);
@@ -114,40 +107,22 @@ export default function VoiceAssistant() {
     };
 
     const handleApiResponse = (data) => {
-        // Example response structure:
-        // {
-        //   "promptMessage": "Hey, can you suggest me some burgers?",
-        //   "data": {
-        //     "session_id": "abc3123456123",
-        //     "prompt_response": "Sure ... Which one?",
-        //     "action": {
-        //       "general": 1,
-        //       "add_item_id": "d2",
-        //       "finalize_order": 1
-        //     }
-        //   }
-        // }
-
         const { promptMessage } = data;
         const { prompt_response, action = {} } = data.data || {};
         const { add_item_id, finalize_order } = action;
 
-        // Add user message to conversation
         if (promptMessage) {
             setConversation(prev => [...prev, { role: 'user', text: promptMessage }]);
         }
 
-        // Add assistant response to conversation
         if (prompt_response) {
             setConversation(prev => [...prev, { role: 'assistant', text: prompt_response }]);
         }
 
-        // If there's an add_item_id, add it to the itemsList
         if (add_item_id) {
             setItemsList(prevItems => [...prevItems, add_item_id]);
         }
 
-        // If finalize_order is present and equals 1, show the place order button
         if (finalize_order === 1) {
             setShowFinalizeOrder(true);
         } else {
@@ -156,9 +131,8 @@ export default function VoiceAssistant() {
     };
 
     const placeOrder = () => {
-        // Implement order placing logic here
         alert(`Placing order for items: ${itemsList.join(', ')}`);
-        // Reset conversation or itemsList if needed
+        // Reset logic if needed
     };
 
     const renderMessage = ({ item }) => {
@@ -172,50 +146,66 @@ export default function VoiceAssistant() {
 
     return (
         <View style={styles.container}>
-            <Text style={styles.sessionIdText}>Session ID: {sessionId}</Text>
-            <Text style={styles.greetingText}>Hello, I am your AI assistant.</Text>
+            <View style={styles.header}>
+                <Text style={styles.headerTitle}>AI Voice Assistant</Text>
+                <Text style={styles.sessionIdText}>Session: {sessionId}</Text>
+            </View>
 
             <View style={styles.conversationWrapper}>
                 <FlatList
                     data={conversation}
                     keyExtractor={(item, index) => index.toString()}
                     renderItem={renderMessage}
+                    contentContainerStyle={styles.conversationList}
                 />
             </View>
 
-            {isRecording || uploading ? (
-                <LottieView
-                    source={require('../../assets/animation/voiceAnimation1.json')}
-                    autoPlay
-                    loop
-                    style={{ width: 200, height: 200 }}
-                />
-            ) : (
-                <Image source={require('../../assets/images/assistant.png')} style={{ width: 100, height: 100 }} />
-            )}
+            {/* Status Display: Recording or Idle */}
+            <View style={styles.assistantArea}>
+                {isRecording || uploading ? (
+                    <LottieView
+                        source={require('../../assets/animation/voiceAnimation1.json')}
+                        autoPlay
+                        loop
+                        style={styles.animation}
+                    />
+                ) : (
+                    <Image source={require('../../assets/images/assistant.png')} style={styles.assistantImage} />
+                )}
+            </View>
 
-            {isRecording ? (
-                <TouchableOpacity style={styles.stopButton} onPress={stopRecording}>
-                    <Text style={styles.stopButtonText}>Stop Recording</Text>
-                </TouchableOpacity>
-            ) : (
-                <TouchableOpacity style={styles.recordButton} onPress={startRecording}>
-                    <Text style={styles.recordButtonText}>Record</Text>
-                </TouchableOpacity>
-            )}
+            {/* Recording Controls */}
+            <View style={styles.controlsContainer}>
+                {isRecording ? (
+                    <TouchableOpacity style={styles.stopButton} onPress={stopRecording}>
+                        <Text style={styles.stopButtonText}>Stop Recording</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity style={styles.recordButton} onPress={startRecording}>
+                        <Text style={styles.recordButtonText}>Record</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
 
-            {uploading && <ActivityIndicator size="large" color="#0000ff" />}
+            {uploading && (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#007BFF" />
+                    <Text style={styles.loadingText}>Processing your voice input...</Text>
+                </View>
+            )}
 
             {showFinalizeOrder && (
-                <TouchableOpacity style={styles.placeOrderButton} onPress={placeOrder}>
-                    <Text style={styles.placeOrderButtonText}>Place Order</Text>
-                </TouchableOpacity>
+                <View style={styles.finalizeContainer}>
+                    <TouchableOpacity style={styles.placeOrderButton} onPress={placeOrder}>
+                        <Text style={styles.placeOrderButtonText}>Place Order</Text>
+                    </TouchableOpacity>
+                </View>
             )}
 
             {itemsList.length > 0 && (
                 <View style={styles.itemsListContainer}>
-                    <Text style={styles.itemsListTitle}>Items Added:</Text>
-                    <Text>{itemsList.join(', ')}</Text>
+                    <Text style={styles.itemsListTitle}>Items Added to Order:</Text>
+                    <Text style={styles.itemsListText}>{itemsList.join(', ')}</Text>
                 </View>
             )}
         </View>
@@ -225,32 +215,41 @@ export default function VoiceAssistant() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f9f9f9',
-        padding: 20,
-        paddingTop: 60,
+        backgroundColor: '#FAFAFA',
+        paddingHorizontal: width * 0.05,
+        paddingTop: height * 0.05,
+    },
+    header: {
+        marginBottom: height * 0.03,
+        alignItems: 'center',
+    },
+    headerTitle: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#333',
+        marginBottom: 5,
     },
     sessionIdText: {
-        position: 'absolute',
-        top: 40,
-        fontSize: 12,
+        fontSize: 16,
         color: '#888',
-        alignSelf: 'center'
-    },
-    greetingText: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 20,
-        textAlign: 'center',
     },
     conversationWrapper: {
-        flex: 1,
-        marginBottom: 20,
+        flex: 3,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: height * 0.03,
+        borderColor: '#CCC',
+        borderWidth: 1,
+    },
+    conversationList: {
+        paddingVertical: 10,
     },
     messageContainer: {
-        padding: 10,
-        marginVertical: 5,
-        borderRadius: 10,
-        maxWidth: '80%'
+        padding: 12,
+        marginVertical: 8,
+        borderRadius: 20,
+        maxWidth: '80%',
     },
     userMessage: {
         alignSelf: 'flex-end',
@@ -261,55 +260,94 @@ const styles = StyleSheet.create({
         backgroundColor: '#E5E5EA',
     },
     messageText: {
-        fontSize: 16,
+        fontSize: 18,
     },
     userText: {
-        color: '#fff'
+        color: '#fff',
     },
     assistantText: {
-        color: '#000'
+        color: '#000',
+    },
+    assistantArea: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: height * 0.02,
+    },
+    assistantImage: {
+        width: 120,
+        height: 120,
+        resizeMode: 'contain',
+    },
+    animation: {
+        width: 200,
+        height: 200,
+    },
+    controlsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        marginBottom: height * 0.02,
     },
     recordButton: {
-        backgroundColor: 'red',
-        padding: 15,
+        backgroundColor: '#D9534F',
+        paddingVertical: 20,
+        paddingHorizontal: 40,
         borderRadius: 50,
-        alignItems: 'center',
-        marginBottom: 20,
     },
     recordButtonText: {
         color: '#fff',
-        fontSize: 16,
+        fontSize: 20,
+        fontWeight: '600',
     },
     stopButton: {
         backgroundColor: '#007BFF',
-        padding: 15,
+        paddingVertical: 20,
+        paddingHorizontal: 40,
         borderRadius: 50,
-        alignItems: 'center',
-        marginBottom: 20,
     },
     stopButtonText: {
         color: '#fff',
-        fontSize: 16,
+        fontSize: 20,
+        fontWeight: '600',
+    },
+    loadingContainer: {
+        alignItems: 'center',
+        marginBottom: height * 0.02,
+    },
+    loadingText: {
+        marginTop: 10,
+        fontSize: 18,
+        color: '#555',
+    },
+    finalizeContainer: {
+        alignItems: 'center',
+        marginBottom: height * 0.03,
     },
     placeOrderButton: {
         backgroundColor: 'green',
-        padding: 15,
+        paddingVertical: 15,
+        paddingHorizontal: 30,
         borderRadius: 10,
-        alignItems: 'center',
-        marginBottom: 20,
     },
     placeOrderButtonText: {
         color: '#fff',
-        fontSize: 16,
+        fontSize: 20,
+        fontWeight: '600',
     },
     itemsListContainer: {
-        marginTop: 10,
         backgroundColor: '#EFEFEF',
-        padding: 10,
-        borderRadius: 5,
+        padding: 15,
+        borderRadius: 10,
+        marginTop: height * 0.02,
     },
     itemsListTitle: {
         fontWeight: 'bold',
-        marginBottom: 5,
+        fontSize: 20,
+        marginBottom: 10,
+        color: '#333',
+    },
+    itemsListText: {
+        fontSize: 18,
+        color: '#333',
     },
 });
