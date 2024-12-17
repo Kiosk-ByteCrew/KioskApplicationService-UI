@@ -12,40 +12,30 @@ import {
 import 'react-native-get-random-values'; // Must be first
 import * as uuid from 'uuid';
 import QRCode from 'react-native-qrcode-svg';
+import { useNavigation } from '@react-navigation/native';
+import {useRouter} from "expo-router";
 
 const BACKEND_URL = 'http://192.168.0.3:8080';
 
 const GenerateQR = () => {
     const [sessionId, setSessionId] = useState('');
-    const [welcomeMessage, setWelcomeMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isPolling, setIsPolling] = useState(false);
-    const pollingIntervalRef = useRef(null); // To keep track of the polling interval
+    const [userName, setUserName] = useState(null); // Store the user's name here after successful scan
+    const pollingIntervalRef = useRef(null);
 
     useEffect(() => {
-        console.log('useEffect triggered');
-
-        // Generate a new Session ID when the app starts
         const newSessionId = uuid.v4();
-        console.log('Generated new sessionId:', newSessionId);
         setSessionId(newSessionId);
-
-        // Create a session on the backend
         createSessionOnBackend(newSessionId);
 
-        // Cleanup on component unmount
         return () => {
-            console.log('Component unmounted, clearing polling interval');
             if (pollingIntervalRef.current) {
                 clearInterval(pollingIntervalRef.current);
             }
         };
     }, []);
 
-    /**
-     * Creates a new session on the backend.
-     * @param {string} newSessionId - The unique session ID.
-     */
     const createSessionOnBackend = async (newSessionId) => {
         setIsLoading(true);
         try {
@@ -58,95 +48,95 @@ const GenerateQR = () => {
             });
 
             if (response.ok) {
-                console.log('Session created successfully');
-                // Start polling for session status
                 startPolling(newSessionId);
             } else {
                 const errorText = await response.text();
-                console.error('Failed to create session:', errorText);
                 Alert.alert('Error', `Failed to create session: ${errorText}`);
             }
         } catch (error) {
-            console.error('Error creating session:', error);
             Alert.alert('Error', 'Unable to create session on backend');
         } finally {
             setIsLoading(false);
         }
     };
 
-    /**
-     * Starts polling the backend for session status every 5 seconds.
-     * @param {string} sessionId - The unique session ID.
-     */
     const startPolling = (sessionId) => {
-        if (isPolling) {
-            // Prevent multiple polling intervals
-            return;
-        }
-
+        if (isPolling) return;
         setIsPolling(true);
-        console.log('Starting to poll for session status');
 
         pollingIntervalRef.current = setInterval(async () => {
             try {
                 const response = await fetch(`${BACKEND_URL}/kiosk/api/session/${sessionId}/status`);
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('Polling response:', data);
-
                     if (data.status === 'connected') {
-                        setWelcomeMessage(`Welcome ${data.user}`);
-                        Alert.alert('Session Connected', `Welcome ${data.user}`);
+                        // Stop polling and store the user name
                         stopPolling();
-                    } else {
-                        console.log('Session status:', data.status);
+                        setUserName(data.user);
                     }
                 } else if (response.status === 404) {
-                    console.error('Session not found');
                     Alert.alert('Error', 'Session not found');
                     stopPolling();
-                } else {
-                    console.error('Polling failed with status:', response.status);
                 }
             } catch (error) {
                 console.error('Polling error:', error);
             }
-        }, 2000); // Poll every 5 seconds
+        }, 2000);
     };
 
-    /**
-     * Stops the polling interval.
-     */
     const stopPolling = () => {
         if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
-            setIsPolling(false);
-            console.log('Stopped polling for session status');
         }
+        setIsPolling(false);
     };
 
-    /**
-     * Resets the session by generating a new session ID and restarting the process.
-     */
     const resetSession = () => {
-        const newSessionId = uuid.v4(); // Generate new UUID
-        console.log('Generated new sessionId:', newSessionId);
+        const newSessionId = uuid.v4();
         setSessionId(newSessionId);
-        setWelcomeMessage('');
-        stopPolling(); // Ensure any existing polling is stopped
+        setUserName(null);
+        stopPolling();
         createSessionOnBackend(newSessionId);
     };
 
+    const router = useRouter();
+    const navigate = useNavigation();
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Kiosk App</Text>
-            {isLoading ? (
-                <ActivityIndicator size="large" color="#0000ff" />
-            ) : (
+            {userName ? (
+                // If user is connected, show welcome info and sessionId
                 <>
-                    {welcomeMessage ? (
-                        <Text style={styles.welcomeMessage}>{welcomeMessage}</Text>
+                    <Text style={styles.sessionIdText}>Session ID: {sessionId}</Text>
+                    <Text style={styles.welcomeMessage}>Welcome {userName}</Text>
+                    <TouchableOpacity
+                        style={styles.assistantButton}
+                        onPress={() => {
+                            router.push({
+                                pathname: "/voiceassistant",
+                                params: {
+                                    sessionId: sessionId,
+                                    user: userName,
+                                },
+                            });
+                        }}
+                    >
+                        <Text style={styles.assistantButtonText}>Start Voice Assistant</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.resetButton}
+                        onPress={resetSession}
+                    >
+                        <Text style={styles.resetButtonText}>Generate New QR Code</Text>
+                    </TouchableOpacity>
+                </>
+            ) : (
+                // If user is not connected yet, show QR code
+                <>
+                    <Text style={styles.title}>Kiosk App</Text>
+                    {isLoading ? (
+                        <ActivityIndicator size="large" color="#0000ff" />
                     ) : (
                         <>
                             <Text style={styles.subtitle}>Scan this QR Code:</Text>
@@ -161,14 +151,14 @@ const GenerateQR = () => {
                             <Text style={styles.sessionId}>Session ID: {sessionId}</Text>
                         </>
                     )}
+                    <TouchableOpacity
+                        style={styles.resetButton}
+                        onPress={resetSession}
+                    >
+                        <Text style={styles.resetButtonText}>Generate New QR Code</Text>
+                    </TouchableOpacity>
                 </>
             )}
-            <TouchableOpacity
-                style={styles.resetButton}
-                onPress={resetSession}
-            >
-                <Text style={styles.resetButtonText}>Generate New QR Code</Text>
-            </TouchableOpacity>
         </View>
     );
 };
@@ -195,10 +185,17 @@ const styles = StyleSheet.create({
         color: '#888',
         marginTop: 10,
     },
+    sessionIdText: {
+        position: 'absolute',
+        top: 40,
+        fontSize: 12,
+        color: '#888',
+    },
     welcomeMessage: {
-        fontSize: 20,
-        color: 'green',
+        fontSize: 24,
         fontWeight: 'bold',
+        marginBottom: 20,
+        marginTop: 60, // to give space from the top sessionId
     },
     resetButton: {
         marginTop: 20,
@@ -207,6 +204,16 @@ const styles = StyleSheet.create({
         borderRadius: 5,
     },
     resetButtonText: {
+        color: '#fff',
+        fontSize: 16,
+    },
+    assistantButton: {
+        marginTop: 20,
+        backgroundColor: '#28a745',
+        padding: 10,
+        borderRadius: 5,
+    },
+    assistantButtonText: {
         color: '#fff',
         fontSize: 16,
     },
