@@ -7,6 +7,7 @@ export default function Index() {
 
     // @ts-ignore
     // @ts-ignore
+    // @ts-ignore
     return (
         <ImageBackground
             source={require("../assets/images/backgroundi.jpg")}
@@ -26,6 +27,20 @@ export default function Index() {
                     onPress={() => router.push("/qrscreen")}
                 >
                     <Text style={styles.buttonText}>Generate QR Code</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[styles.button, styles.qrButton]}
+                    onPress={() => {
+                        router.push({
+                            pathname: "/voiceassistant",
+                            params: {
+                                sessionId: "sdcdscs45",
+                                user: "Kashyap",
+                            },
+                        });
+                    }}
+                >
+                    <Text style={styles.buttonText}>Continue as Guest</Text>
                 </TouchableOpacity>
             </View>
         </ImageBackground>
