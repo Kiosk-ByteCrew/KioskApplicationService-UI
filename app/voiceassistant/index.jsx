@@ -1,26 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, FlatList, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, Dimensions, ScrollView } from 'react-native';
 import LottieView from 'lottie-react-native';
-import { useLocalSearchParams } from 'expo-router';
+import {useLocalSearchParams, useRouter} from 'expo-router';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
 
-const BACKEND_URL = 'http://192.168.0.3:8082'; // Update to your actual backend URL
-
-// Dimensions for scaling on a 10-inch iPad
-// A 10-inch iPad typically has a resolution like 2160x1620 or similar. We'll just use Dimensions for responsive UI.
+const BACKEND_URL = 'http://192.168.0.3:8082';
 const { width, height } = Dimensions.get('window');
+
+// Import Menu JSON
+const menu = {
+    categories: {
+        burgers: [
+            { id: 'b1', name: 'Veg Burger', price: 5.99 },
+            { id: 'b2', name: 'Chicken Burger', price: 6.99 },
+            { id: 'b3', name: 'Beef Burger', price: 7.99 }
+        ],
+        pizzas: [
+            { id: 'p1', name: 'Margherita', price: 8.99 },
+            { id: 'p2', name: 'Pepperoni', price: 9.99 }
+        ],
+        drinks: [
+            { id: 'd1', name: 'Coke', price: 1.99 },
+            { id: 'd2', name: 'Orange Juice', price: 2.49 }
+        ]
+    }
+};
 
 export default function VoiceAssistant() {
     const { sessionId, user } = useLocalSearchParams();
     const [isRecording, setIsRecording] = useState(false);
+    const [isTalking, setIsTalking] = useState(false); // Animation state
     const [recording, setRecording] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [conversation, setConversation] = useState([]);
-    const [itemsList, setItemsList] = useState([]);
-    const [showFinalizeOrder, setShowFinalizeOrder] = useState(false);
-
-    const start_conversation = true;
+    const [cart, setCart] = useState([]);
+    const [typing, setTyping] = useState(false);
+    const [showPlaceOrder, setShowPlaceOrder] = useState(false);
+    const router = useRouter();
 
     useEffect(() => {
         requestPermissions();
@@ -34,70 +50,46 @@ export default function VoiceAssistant() {
     };
 
     const startRecording = async () => {
-        try {
-            setIsRecording(true);
-            const { granted } = await Audio.requestPermissionsAsync();
-            if (!granted) {
-                alert('Microphone permission not granted');
-                setIsRecording(false);
-                return;
-            }
+        setIsTalking(true); // Start animation
+        setIsRecording(true);
 
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-            });
+        const { granted } = await Audio.requestPermissionsAsync();
+        if (!granted) return alert('Microphone permission not granted');
 
-            const newRecording = new Audio.Recording();
-            await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-            await newRecording.startAsync();
-            setRecording(newRecording);
-        } catch (err) {
-            console.error('startRecording error:', err);
-            setIsRecording(false);
-        }
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+
+        const newRecording = new Audio.Recording();
+        await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+        await newRecording.startAsync();
+        setRecording(newRecording);
     };
 
     const stopRecording = async () => {
+        setIsTalking(false); // Stop animation
         setIsRecording(false);
+
         if (!recording) return;
-        try {
-            await recording.stopAndUnloadAsync();
-            const uri = recording.getURI();
-            console.log('Recording stopped. File stored at:', uri);
-            setRecording(null);
-            await uploadAudio(uri);
-        } catch (err) {
-            console.error('stopRecording error:', err);
-        }
+        await recording.stopAndUnloadAsync();
+        const uri = recording.getURI();
+        await uploadAudio(uri);
+        setRecording(null);
     };
 
     const uploadAudio = async (uri) => {
         setUploading(true);
-        const message = '';
-
         let formData = new FormData();
-        formData.append('file', {
-            uri,
-            type: 'audio/m4a',
-            name: 'recorded_audio.m4a',
-        });
+        formData.append('file', { uri, type: 'audio/m4a', name: 'recorded_audio.m4a' });
         formData.append('session_id', sessionId);
-        formData.append('message', message);
-        formData.append('start_conversation', start_conversation ? 'true' : 'false');
+        formData.append('start_conversation', 'true');
 
         try {
             const response = await fetch(`${BACKEND_URL}/kiosk-comm/api/conversation/`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'multipart/form-data; ',
-                },
+                headers: { 'Content-Type': 'multipart/form-data' },
                 body: formData,
             });
 
             const data = await response.json();
-            console.log('Response:', data);
-
             handleApiResponse(data);
         } catch (err) {
             console.error('uploadAudio error:', err);
@@ -115,24 +107,36 @@ export default function VoiceAssistant() {
             setConversation(prev => [...prev, { role: 'user', text: promptMessage }]);
         }
 
-        if (prompt_response) {
-            setConversation(prev => [...prev, { role: 'assistant', text: prompt_response }]);
-        }
-
         if (add_item_id) {
-            setItemsList(prevItems => [...prevItems, add_item_id]);
+            const item = findMenuItem(add_item_id);
+            if (item) {
+                setCart(prev => [...prev, item]);
+            }
         }
 
         if (finalize_order === 1) {
-            setShowFinalizeOrder(true);
-        } else {
-            setShowFinalizeOrder(false);
+            setShowPlaceOrder(true);
+        }
+
+        if (prompt_response) {
+            setTyping(true);
+            setTimeout(() => {
+                setTyping(false);
+                setConversation(prev => [...prev, { role: 'assistant', text: prompt_response }]);
+            }, 2000);
         }
     };
 
-    const placeOrder = () => {
-        alert(`Placing order for items: ${itemsList.join(', ')}`);
-        // Reset logic if needed
+    const findMenuItem = (id) => {
+        for (let category in menu.categories) {
+            const item = menu.categories[category].find((i) => i.id === id);
+            if (item) return item;
+        }
+        return null;
+    };
+
+    const calculateTotal = () => {
+        return cart.reduce((total, item) => total + item.price, 0).toFixed(2);
     };
 
     const renderMessage = ({ item }) => {
@@ -146,208 +150,130 @@ export default function VoiceAssistant() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>AI Voice Assistant</Text>
-                <Text style={styles.sessionIdText}>Session: {sessionId}</Text>
-            </View>
-
-            <View style={styles.conversationWrapper}>
+            <Text style={styles.header}>AI Voice Assistant</Text>
+            <View style={styles.content}>
                 <FlatList
-                    data={conversation}
+                    data={typing ? [...conversation, { role: 'assistant', typing: true }] : conversation}
                     keyExtractor={(item, index) => index.toString()}
-                    renderItem={renderMessage}
+                    renderItem={({ item }) =>
+                        item.typing ? (
+                            <View style={[styles.messageContainer, styles.assistantMessage]}>
+                                <LottieView
+                                    source={require('../../assets/animation/Typing.json')}
+                                    autoPlay
+                                    loop
+                                    style={styles.typingAnimation}
+                                />
+                            </View>
+                        ) : (
+                            renderMessage({ item })
+                        )
+                    }
                     contentContainerStyle={styles.conversationList}
                 />
+
+                <View style={styles.cart}>
+                    <Text style={styles.cartTitle}>Your Cart</Text>
+                    <ScrollView>
+                        {cart.map((item, index) => (
+                            <View key={index} style={styles.cartItem}>
+                                <Text>{item.name}</Text>
+                                <Text>${item.price.toFixed(2)}</Text>
+                            </View>
+                        ))}
+                    </ScrollView>
+                    <Text style={styles.total}>Total: ${calculateTotal()}</Text>
+                    {showPlaceOrder && (
+                        <TouchableOpacity
+                            style={styles.placeOrderButton}
+                            onPress={async () => {
+                                const payload = {
+                                    userName: user,
+                                    restaurantId: 100,          // Replace with actual restaurant ID
+                                    tenantId: 607,              // Replace with actual tenant ID
+                                    status: "PENDING",
+                                    itemDetails: cart.map((item) => ({
+                                        itemId: item.id,       // Assuming item.id matches the API
+                                        itemName: item.name,
+                                        quantity: 1,           // Default quantity set to 1
+                                        price: item.price
+                                    }))
+                                };
+
+                                try {
+                                    /*const response = await fetch(`${BACKEND_URL}/kiosk-comm/api/orders/place`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify(payload),
+                                    });*/
+
+                                    if (true) {
+                                        console.log("Order placed successfully");
+                                        router.push({
+                                            pathname: '/confirmation',
+                                            params: { cart: JSON.stringify(cart), total: calculateTotal() }
+                                        });
+                                    } else {
+                                        console.error("Failed to place order");
+                                        alert("Error: Failed to place order");
+                                    }
+                                } catch (error) {
+                                    console.error("Error placing order:", error);
+                                    alert("An unexpected error occurred. Please try again.");
+                                }
+                            }}
+                        >
+                            <Text style={styles.buttonText}>Place Order</Text>
+                        </TouchableOpacity>
+
+                    )}
+                </View>
             </View>
 
-            {/* Status Display: Recording or Idle */}
-            <View style={styles.assistantArea}>
-                {isRecording || uploading ? (
+            <View style={styles.controls}>
+                {isTalking && (
                     <LottieView
                         source={require('../../assets/animation/voiceAnimation1.json')}
                         autoPlay
                         loop
-                        style={styles.animation}
+                        style={styles.voiceAnimation}
                     />
-                ) : (
-                    <Image source={require('../../assets/images/assistant.png')} style={styles.assistantImage} />
                 )}
-            </View>
 
-            {/* Recording Controls */}
-            <View style={styles.controlsContainer}>
                 {isRecording ? (
                     <TouchableOpacity style={styles.stopButton} onPress={stopRecording}>
-                        <Text style={styles.stopButtonText}>Stop Recording</Text>
+                        <Text style={styles.buttonText}>Stop</Text>
                     </TouchableOpacity>
                 ) : (
                     <TouchableOpacity style={styles.recordButton} onPress={startRecording}>
-                        <Text style={styles.recordButtonText}>Record</Text>
+                        <Text style={styles.buttonText}>Talk with AI</Text>
                     </TouchableOpacity>
                 )}
             </View>
-
-            {uploading && (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#007BFF" />
-                    <Text style={styles.loadingText}>Processing your voice input...</Text>
-                </View>
-            )}
-
-            {showFinalizeOrder && (
-                <View style={styles.finalizeContainer}>
-                    <TouchableOpacity style={styles.placeOrderButton} onPress={placeOrder}>
-                        <Text style={styles.placeOrderButtonText}>Place Order</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
-
-            {itemsList.length > 0 && (
-                <View style={styles.itemsListContainer}>
-                    <Text style={styles.itemsListTitle}>Items Added to Order:</Text>
-                    <Text style={styles.itemsListText}>{itemsList.join(', ')}</Text>
-                </View>
-            )}
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#FAFAFA',
-        paddingHorizontal: width * 0.05,
-        paddingTop: height * 0.05,
-    },
-    header: {
-        marginBottom: height * 0.03,
-        alignItems: 'center',
-    },
-    headerTitle: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#333',
-        marginBottom: 5,
-    },
-    sessionIdText: {
-        fontSize: 16,
-        color: '#888',
-    },
-    conversationWrapper: {
-        flex: 3,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 10,
-        padding: 10,
-        marginBottom: height * 0.03,
-        borderColor: '#CCC',
-        borderWidth: 1,
-    },
-    conversationList: {
-        paddingVertical: 10,
-    },
-    messageContainer: {
-        padding: 12,
-        marginVertical: 8,
-        borderRadius: 20,
-        maxWidth: '80%',
-    },
-    userMessage: {
-        alignSelf: 'flex-end',
-        backgroundColor: '#007BFF',
-    },
-    assistantMessage: {
-        alignSelf: 'flex-start',
-        backgroundColor: '#E5E5EA',
-    },
-    messageText: {
-        fontSize: 18,
-    },
-    userText: {
-        color: '#fff',
-    },
-    assistantText: {
-        color: '#000',
-    },
-    assistantArea: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: height * 0.02,
-    },
-    assistantImage: {
-        width: 120,
-        height: 120,
-        resizeMode: 'contain',
-    },
-    animation: {
-        width: 200,
-        height: 200,
-    },
-    controlsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginBottom: height * 0.02,
-    },
-    recordButton: {
-        backgroundColor: '#D9534F',
-        paddingVertical: 20,
-        paddingHorizontal: 40,
-        borderRadius: 50,
-    },
-    recordButtonText: {
-        color: '#fff',
-        fontSize: 20,
-        fontWeight: '600',
-    },
-    stopButton: {
-        backgroundColor: '#007BFF',
-        paddingVertical: 20,
-        paddingHorizontal: 40,
-        borderRadius: 50,
-    },
-    stopButtonText: {
-        color: '#fff',
-        fontSize: 20,
-        fontWeight: '600',
-    },
-    loadingContainer: {
-        alignItems: 'center',
-        marginBottom: height * 0.02,
-    },
-    loadingText: {
-        marginTop: 10,
-        fontSize: 18,
-        color: '#555',
-    },
-    finalizeContainer: {
-        alignItems: 'center',
-        marginBottom: height * 0.03,
-    },
-    placeOrderButton: {
-        backgroundColor: 'green',
-        paddingVertical: 15,
-        paddingHorizontal: 30,
-        borderRadius: 10,
-    },
-    placeOrderButtonText: {
-        color: '#fff',
-        fontSize: 20,
-        fontWeight: '600',
-    },
-    itemsListContainer: {
-        backgroundColor: '#EFEFEF',
-        padding: 15,
-        borderRadius: 10,
-        marginTop: height * 0.02,
-    },
-    itemsListTitle: {
-        fontWeight: 'bold',
-        fontSize: 20,
-        marginBottom: 10,
-        color: '#333',
-    },
-    itemsListText: {
-        fontSize: 18,
-        color: '#333',
-    },
+    container: { flex: 1, backgroundColor: '#F8F8F8', padding: 10 },
+    header: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
+    content: { flex: 1, flexDirection: 'row' },
+    conversationList: { flex: 3, padding: 10 },
+    messageContainer: { padding: 10, borderRadius: 10, marginVertical: 5, maxWidth: '80%' },
+    userMessage: { alignSelf: 'flex-end', backgroundColor: '#007BFF' },
+    assistantMessage: { alignSelf: 'flex-start', backgroundColor: '#E0E0E0' },
+    messageText: { fontSize: 16 },
+    userText: { color: '#FFF' },
+    assistantText: { color: '#000' },
+    typingAnimation: { width: 100, height: 40, alignSelf: 'flex-start' },
+    cart: { width: 250, backgroundColor: '#FFF', padding: 10, borderRadius: 10, marginLeft: 10, elevation: 3 },
+    cartTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
+    cartItem: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
+    total: { fontSize: 18, fontWeight: 'bold', marginTop: 10 },
+    placeOrderButton: { backgroundColor: '#28A745', padding: 10, marginTop: 10, borderRadius: 5 },
+    controls: { flexDirection: 'column', alignItems: 'center', marginTop: 10 },
+    voiceAnimation: { width: 150, height: 150, marginBottom: 10 },
+    recordButton: { backgroundColor: '#28A745', padding: 15, borderRadius: 30 },
+    stopButton: { backgroundColor: '#DC3545', padding: 15, borderRadius: 30 },
+    buttonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
 });

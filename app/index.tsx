@@ -2,12 +2,14 @@ import React from "react";
 import { Text, View, StyleSheet, TouchableOpacity, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
 
+// Helper function to generate a random session ID
+const generateSessionId = () => {
+    return `session_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+};
+
 export default function Index() {
     const router = useRouter();
 
-    // @ts-ignore
-    // @ts-ignore
-    // @ts-ignore
     return (
         <ImageBackground
             source={require("../assets/images/backgroundi.jpg")}
@@ -31,11 +33,12 @@ export default function Index() {
                 <TouchableOpacity
                     style={[styles.button, styles.qrButton]}
                     onPress={() => {
+                        const sessionId = generateSessionId(); // Generate a random session ID
                         router.push({
                             pathname: "/voiceassistant",
                             params: {
-                                sessionId: "sdcdscs45",
-                                user: "Kashyap",
+                                sessionId: sessionId,
+                                user: "Guest",
                             },
                         });
                     }}
