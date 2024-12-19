@@ -15,7 +15,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useNavigation } from '@react-navigation/native';
 import {useRouter} from "expo-router";
 
-const BACKEND_URL = 'http://192.168.0.3:8080';
+const BACKEND_URL = 'http://192.168.0.12:8080';
 
 const GenerateQR = () => {
     const [sessionId, setSessionId] = useState('');

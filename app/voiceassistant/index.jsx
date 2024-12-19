@@ -4,7 +4,7 @@ import LottieView from 'lottie-react-native';
 import {useLocalSearchParams, useRouter} from 'expo-router';
 import { Audio } from 'expo-av';
 
-const BACKEND_URL = 'http://192.168.0.3:8082';
+const BACKEND_URL = 'http://192.168.0.12:8082';
 const { width, height } = Dimensions.get('window');
 
 // Import Menu JSON
@@ -75,12 +75,14 @@ export default function VoiceAssistant() {
         setRecording(null);
     };
 
+    let startConversation = true;
+
     const uploadAudio = async (uri) => {
         setUploading(true);
         let formData = new FormData();
         formData.append('file', { uri, type: 'audio/m4a', name: 'recorded_audio.m4a' });
         formData.append('session_id', sessionId);
-        formData.append('start_conversation', 'true');
+        formData.append('start_conversation', startConversation);
 
         try {
             const response = await fetch(`${BACKEND_URL}/kiosk-comm/api/conversation/`, {
@@ -94,6 +96,7 @@ export default function VoiceAssistant() {
         } catch (err) {
             console.error('uploadAudio error:', err);
         } finally {
+            startConversation = false;
             setUploading(false);
         }
     };
@@ -201,11 +204,16 @@ export default function VoiceAssistant() {
                                 };
 
                                 try {
-                                    /*const response = await fetch(`${BACKEND_URL}/kiosk-comm/api/orders/place`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify(payload),
-                                    });*/
+                                    try {
+                                        const response = await fetch(`${BACKEND_URL}/kiosk-comm/api/orders/place`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(payload),
+                                        });
+                                    } catch (error) {
+                                        console.error("Error placing order:", error);
+                                        alert("An unexpected error occurred. Please try again.");
+                                    }
 
                                     if (true) {
                                         console.log("Order placed successfully");
